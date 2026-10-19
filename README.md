@@ -1,7 +1,7 @@
 <p align="center">
-  <a href="https://count.getloli.com">
+  <picture>
     <img src="https://count.getloli.com/@lwDavid?theme=moebooru&amp;darkmode=auto" alt="Profile views" height="100">
-  </a>
+  </picture>
 </p>
 
 <picture>
