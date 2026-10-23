@@ -1,9 +1,9 @@
 {
   "login": "lwDavid",
-  "updatedAt": "2026-10-23T18:46:30.517Z",
+  "updatedAt": "2026-10-23T18:48:56.363Z",
   "period": {
-    "from": "2025-10-23T18:46:30.517Z",
-    "to": "2026-10-23T18:46:30.517Z"
+    "from": "2025-10-23T18:48:56.363Z",
+    "to": "2026-10-23T18:48:56.363Z"
   },
   "contributions": {
     "total": 589,
@@ -12,6 +12,7 @@
     "reviews": 42,
     "issues": 100,
     "repositories": 7,
+    "restrictedContributions": 26,
     "weeks": [
       {
         "contributionDays": [
