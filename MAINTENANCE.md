@@ -1,7 +1,8 @@
 # Profile statistics
 
-The profile cards are repository-hosted SVG files generated from GitHub's GraphQL
-API. They do not depend on an external statistics image service.
+The profile cards are repository-hosted SVG files generated from GitHub's public
+profile calendar and GraphQL API. They do not depend on an external statistics
+image service.
 
 The **Update profile statistics** workflow runs approximately every six hours,
 after changes to its scripts, and on manual dispatch from the Actions tab.
@@ -16,17 +17,20 @@ the previous successful images remain available and retain their update date.
 
 ## What the numbers mean
 
-- Activity covers public contributions in the rolling past twelve months, ending
-  at the refresh time. It preserves the original card's public-only scope.
-- The heatmap and total come from `contributionsCollection.contributionCalendar`.
-  They follow GitHub's contribution rules, not the recent-events feed. The total
-  is validated against the sum of the daily counts.
+- The heatmap and large total come from the same public past-year contribution
+  calendar visitors see at `https://github.com/users/lwDavid/contributions`.
+  GitHub's visible calendar includes week padding around its past-year period.
+  Its dates, levels and sum of daily counts are validated against the heading.
+  An unexpected markup change fails the update and preserves the last good cards.
+- The public profile calendar is used deliberately: the token-scoped GraphQL
+  calendar can return a different total. Its separate `apiTotal` and restricted
+  contribution count are retained in the generated JSON for transparency.
 - Pull requests, commits, reviews, issues and created repositories use the
   contribution collection's corresponding totals. Visibility follows the workflow
-  token, so private contribution details are not included. GitHub's profile page
-  can show anonymized private activity as well, so its overall number can be higher
-  than this card's public-only total. Public subtotals also need not sum to the
-  calendar total because GitHub counts additional contribution types.
+  token over the rolling past twelve months, so private contribution details are
+  not included. The card labels these three visible subtotals as public. They need
+  not sum to the main total: the public profile calendar can include anonymized
+  private activity and other contribution types not visible in those subtotals.
 - Language shares use code bytes across **all owned public repositories,
   including forks**, preserving the original card's scope. Both repository and
   language connections are paginated. These percentages do not measure skill or

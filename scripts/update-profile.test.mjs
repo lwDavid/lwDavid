@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readFile, writeFile, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { periodFor, fetchProfileData, validateData, languageShares, renderFiles, updateReadme, writeProfile } from './update-profile.mjs';
+import { periodFor, fetchProfileData, parseGitHubCalendar, validateData, languageShares, renderFiles, updateReadme, writeProfile } from './update-profile.mjs';
 
 const now = new Date('2026-10-24T03:00:00Z');
 function fixture() {
@@ -27,6 +27,30 @@ function collection(data = fixture()) {
   return { totalCommitContributions: c.commits, totalPullRequestContributions: c.pullRequests, totalPullRequestReviewContributions: c.reviews, totalIssueContributions: c.issues, totalRepositoryContributions: c.repositories, restrictedContributionsCount: c.restrictedContributions, contributionCalendar: { totalContributions: c.total, weeks: c.weeks } };
 }
 const readme = '<picture><img src="./assets/overview-light.svg" width="900" alt="Old numbers"></picture>\n';
+const calendarRequest = async () => {
+  const data = fixture();
+  return { total: data.contributions.total, weeks: data.contributions.weeks, period: data.period };
+};
+function calendarHtml() {
+  const days = fixture().contributions.weeks.flatMap(week => week.contributionDays);
+  // GitHub emits cells in weekday rows, not chronological order.
+  days.sort((a, b) => a.weekday - b.weekday || a.date.localeCompare(b.date));
+  return `<h2>366 contributions in the last year</h2>${days.map((day, index) => `<td data-date="${day.date}" id="day-${index}" data-level="1"></td><tool-tip for="day-${index}">1 contribution on a day.</tool-tip>`).join('')}`;
+}
+
+test('the public calendar parser handles weekday rows and matches the displayed total', () => {
+  const parsed = parseGitHubCalendar(calendarHtml());
+  assert.equal(parsed.total, 366);
+  assert.equal(parsed.weeks[0].contributionDays[0].date, '2025-10-24');
+  assert.equal(parsed.weeks.at(-1).contributionDays.at(-1).date, '2026-10-24');
+  validateData({ ...fixture(), calendarPeriod: parsed.period, contributions: { ...fixture().contributions, ...parsed } });
+});
+
+test('changed or incomplete public calendar markup fails without inventing counts', () => {
+  assert.throws(() => parseGitHubCalendar('<h2>New GitHub markup</h2>'), /heading/);
+  assert.throws(() => parseGitHubCalendar(calendarHtml().replace('366 contributions in the last year', '367 contributions in the last year')), /total is inconsistent/);
+  assert.throws(() => parseGitHubCalendar(calendarHtml().replace('1 contribution on a day.', 'Hidden count')), /missing its count/);
+});
 
 test('a leap-day update uses a valid one-year start date', () => {
   assert.equal(periodFor(new Date('2024-02-29T12:00:00Z')).from, '2023-02-28T12:00:00.000Z');
@@ -40,7 +64,7 @@ test('repository and nested language pagination both contribute to totals', asyn
     if (variables.after) return { user: { repositories: page([{ name: 'fork', languages: langs([['C++', 7], ['Python', 4]]) }]) } };
     return { user: { contributionsCollection: collection(), repositories: page([{ name: 'main', languages: langs([['C++', 1]], true, 'lang-page-2') }], true, 'repo-page-2') } };
   };
-  const data = await fetchProfileData({ login: 'lwDavid', token: 'test-only', now, request });
+  const data = await fetchProfileData({ login: 'lwDavid', token: 'test-only', now, request, calendarRequest });
   assert.deepEqual(data.languages.bytes, { 'C++': 17, Python: 4 });
   assert.equal(data.languages.repositoryCount, 2);
   assert.equal(calls.length, 3);
@@ -52,11 +76,19 @@ test('repository and nested language pagination both contribute to totals', asyn
 
 test('incomplete pagination fails instead of publishing truncated statistics', async () => {
   const request = async () => ({ user: { contributionsCollection: collection(), repositories: page([], true, null) } });
-  await assert.rejects(fetchProfileData({ login: 'lwDavid', token: 'test-only', now, request }), /Invalid pagination/);
+  await assert.rejects(fetchProfileData({ login: 'lwDavid', token: 'test-only', now, request, calendarRequest }), /Invalid pagination/);
+});
+
+test('the card follows the public profile calendar when the API total differs', async () => {
+  const request = async () => ({ user: { contributionsCollection: { ...collection(), contributionCalendar: { totalContributions: 123 } }, repositories: page([]) } });
+  const data = await fetchProfileData({ login: 'lwDavid', token: 'test-only', now, request, calendarRequest });
+  assert.equal(data.contributions.total, 366);
+  assert.equal(data.contributions.apiTotal, 123);
+  await assert.rejects(fetchProfileData({ login: 'lwDavid', token: 'test-only', now, request, calendarRequest: async () => { throw new Error('Public calendar unavailable'); } }), /Public calendar unavailable/);
 });
 
 test('an API failure is propagated instead of silently using zeroes', async () => {
-  await assert.rejects(fetchProfileData({ login: 'lwDavid', token: 'test-only', now, request: async () => { throw new Error('HTTP 403'); } }), /HTTP 403/);
+  await assert.rejects(fetchProfileData({ login: 'lwDavid', token: 'test-only', now, calendarRequest, request: async () => { throw new Error('HTTP 403'); } }), /HTTP 403/);
   await assert.rejects(fetchProfileData({ login: 'lwDavid', token: '', now }), /GITHUB_TOKEN is required/);
 });
 
@@ -122,7 +154,7 @@ test('language names are escaped before being inserted into SVG markup', () => {
 test('README alternative text updates while the visitor counter is preserved', () => {
   const source = '<img src="https://count.getloli.com/@lwDavid" alt="Profile views">\n' + readme;
   const updated = updateReadme(source, fixture());
-  assert.match(updated, /366 public GitHub contributions/);
+  assert.match(updated, /366 contributions on GitHub/);
   assert.match(updated, /Updated 24 Oct 2026/);
   assert.equal(updated.split('\n')[0], source.split('\n')[0]);
   assert.throws(() => updateReadme('README without a card', fixture()), /was not found/);

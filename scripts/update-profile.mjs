@@ -16,7 +16,6 @@ const COLLECTION = `
     restrictedContributionsCount
     contributionCalendar {
       totalContributions
-      weeks { contributionDays { date weekday contributionCount contributionLevel } }
     }
   }`;
 const REPOSITORIES = `
@@ -74,7 +73,58 @@ function nextCursor(connection, previous, label) {
   return cursor;
 }
 
-export async function fetchProfileData({ login, token, now = new Date(), request = githubRequest }) {
+export function parseGitHubCalendar(html) {
+  const plain = value => value.replace(/<[^>]*>/g, ' ').replace(/&nbsp;|&#160;/g, ' ').replace(/\s+/g, ' ').trim();
+  const attributes = tag => Object.fromEntries([...tag.matchAll(/([\w:-]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g)].map(match => [match[1], match[2] ?? match[3]]));
+  const heading = [...html.matchAll(/<h2\b[^>]*>([\s\S]*?)<\/h2>/g)].map(match => plain(match[1])).find(value => /contributions? in the last year/.test(value));
+  const count = heading?.match(/^([\d,]+) contributions? in the last year/);
+  if (!count) throw new Error('GitHub public calendar heading was not found');
+  const total = Number(count[1].replaceAll(',', ''));
+  const tooltips = new Map();
+  for (const match of html.matchAll(/<tool-tip\b([^>]*)>([\s\S]*?)<\/tool-tip>/g)) {
+    const target = attributes(match[1]).for;
+    if (target) tooltips.set(target, plain(match[2]));
+  }
+  const days = [];
+  for (const match of html.matchAll(/<td\b[^>]*>/g)) {
+    const cell = attributes(match[0]);
+    if (!cell['data-date']) continue;
+    const tooltip = tooltips.get(cell.id);
+    const contributions = tooltip?.match(/^([\d,]+) contributions?\b/);
+    if (!contributions && !tooltip?.startsWith('No contributions')) throw new Error('GitHub calendar day is missing its count');
+    if (!/^[0-4]$/.test(cell['data-level'])) throw new Error('GitHub calendar day is missing its level');
+    const date = cell['data-date'];
+    days.push({ date, weekday: new Date(`${date}T00:00:00Z`).getUTCDay(), contributionCount: contributions ? Number(contributions[1].replaceAll(',', '')) : 0, contributionLevel: LEVELS[Number(cell['data-level'])] });
+  }
+  days.sort((a, b) => a.date.localeCompare(b.date));
+  if (days.length < 365 || days.length > 373 || days.reduce((sum, day) => sum + day.contributionCount, 0) !== total) throw new Error('GitHub public calendar is incomplete or its total is inconsistent');
+  const weeks = [];
+  for (const day of days) {
+    if (!weeks.length || day.weekday === 0) weeks.push({ contributionDays: [] });
+    weeks.at(-1).contributionDays.push(day);
+  }
+  return { total, weeks, period: { from: `${days[0].date}T00:00:00.000Z`, to: `${days.at(-1).date}T00:00:00.000Z` } };
+}
+
+async function githubCalendar(login) {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    let response;
+    try {
+      response = await fetch(`https://github.com/users/${encodeURIComponent(login)}/contributions`, {
+        headers: { 'Accept-Language': 'en-US', 'User-Agent': 'lwDavid-profile-updater' },
+        signal: AbortSignal.timeout(30_000),
+      });
+    } catch (error) {
+      if (attempt === 2) throw new Error(`Public calendar request failed: ${error.cause?.code ?? error.name}`);
+    }
+    if (response?.ok) return parseGitHubCalendar(await response.text());
+    if (response && ![429, 500, 502, 503, 504].includes(response.status)) throw new Error(`Public calendar returned HTTP ${response.status}`);
+    if (attempt === 2) throw new Error(`Public calendar returned HTTP ${response?.status ?? 'unavailable'}`);
+    await new Promise(resolve => setTimeout(resolve, 1000 * 2 ** attempt));
+  }
+}
+
+export async function fetchProfileData({ login, token, now = new Date(), request = githubRequest, calendarRequest = githubCalendar }) {
   if (!/^[a-z\d](?:[a-z\d-]{0,37}[a-z\d])?$/i.test(login)) throw new Error('Invalid GitHub login');
   if (!token) throw new Error('GITHUB_TOKEN is required; run the update workflow on GitHub Actions');
   const period = periodFor(now);
@@ -117,17 +167,23 @@ export async function fetchProfileData({ login, token, now = new Date(), request
     }
     after = nextCursor(repositories, after, 'repositories');
   } while (after);
+  // The public profile calendar can differ from the token-scoped GraphQL calendar.
+  // Read the same public calendar visitors see instead of conflating the totals.
+  const calendar = await calendarRequest(login);
   const data = {
     login, updatedAt: new Date(now).toISOString(), period,
+    calendarPeriod: calendar.period,
+    calendarSource: `https://github.com/users/${login}/contributions`,
     contributions: {
-      total: collection?.contributionCalendar?.totalContributions,
+      total: calendar.total,
+      apiTotal: collection?.contributionCalendar?.totalContributions,
       pullRequests: collection?.totalPullRequestContributions,
       commits: collection?.totalCommitContributions,
       reviews: collection?.totalPullRequestReviewContributions,
       issues: collection?.totalIssueContributions,
       repositories: collection?.totalRepositoryContributions,
       restrictedContributions: collection?.restrictedContributionsCount,
-      weeks: collection?.contributionCalendar?.weeks,
+      weeks: calendar.weeks,
     },
     languages: { repositoryCount, includesForks: true, bytes: Object.fromEntries([...totals].sort(([a], [b]) => a.localeCompare(b))) },
   };
@@ -138,9 +194,12 @@ export async function fetchProfileData({ login, token, now = new Date(), request
 export function validateData(data) {
   if (!data?.login || !Number.isFinite(Date.parse(data.updatedAt))) throw new Error('Invalid profile metadata');
   if (!Number.isFinite(Date.parse(data.period?.from)) || !Number.isFinite(Date.parse(data.period?.to))) throw new Error('Invalid contribution period');
-  let expectedDate = Date.parse(`${data.period.from.slice(0, 10)}T00:00:00Z`);
-  const lastDate = Date.parse(`${data.period.to.slice(0, 10)}T00:00:00Z`);
-  if (lastDate < expectedDate || lastDate - expectedDate > 366 * 86_400_000) throw new Error('Invalid contribution period');
+  const calendarPeriod = data.calendarPeriod ?? data.period;
+  let expectedDate = Date.parse(`${calendarPeriod.from.slice(0, 10)}T00:00:00Z`);
+  const lastDate = Date.parse(`${calendarPeriod.to.slice(0, 10)}T00:00:00Z`);
+  if (!Number.isFinite(expectedDate) || !Number.isFinite(lastDate) || lastDate < expectedDate || lastDate - expectedDate > 372 * 86_400_000) throw new Error('Invalid contribution period');
+  const updateDay = Date.parse(`${data.updatedAt.slice(0, 10)}T00:00:00Z`);
+  if (lastDate < updateDay - 86_400_000 || lastDate > updateDay + 86_400_000) throw new Error('Public calendar is out of date');
   const c = data.contributions;
   for (const key of ['total', 'pullRequests', 'commits', 'reviews', 'issues', 'repositories']) {
     if (!Number.isSafeInteger(c?.[key]) || c[key] < 0) throw new Error(`Invalid contribution count: ${key}`);
@@ -193,8 +252,8 @@ function activity(data, theme, x = 0, y = 0) {
   const displayTotal = number(c.total);
   const totalSize = Math.min(65, 215 / Math.max(displayTotal.length * .58, 1));
   let body = text(24, 116, displayTotal, theme.text, totalSize, 'font-weight="600" letter-spacing="-2"');
-  body += text(416, 113, 'public contributions', theme.secondary, 15, 'text-anchor="end"');
-  for (const [index, [value, label]] of [[c.pullRequests, 'Pull requests'], [c.commits, 'Commits'], [c.reviews, 'Reviews']].entries()) {
+  body += text(416, 113, 'contributions', theme.secondary, 15, 'text-anchor="end"');
+  for (const [index, [value, label]] of [[c.pullRequests, 'Public PRs'], [c.commits, 'Public commits'], [c.reviews, 'Public reviews']].entries()) {
     body += text(24 + index * 138, 164, number(value), theme.text, 24, 'font-weight="600"');
     body += text(24 + index * 138, 185, label, theme.muted, 12);
   }
@@ -204,16 +263,16 @@ function activity(data, theme, x = 0, y = 0) {
     week.contributionDays.forEach(day => {
       const dx = 24 + weekIndex * step;
       const dy = 224 + day.weekday * 7.25;
-      body += `<rect x="${dx.toFixed(2)}" y="${dy.toFixed(2)}" width="5.6" height="5.6" rx="1.5" fill="${theme.heat[LEVELS.indexOf(day.contributionLevel)]}"><title>${day.date}: ${number(day.contributionCount)} public contributions</title></rect>`;
+      body += `<rect x="${dx.toFixed(2)}" y="${dy.toFixed(2)}" width="5.6" height="5.6" rx="1.5" fill="${theme.heat[LEVELS.indexOf(day.contributionLevel)]}"><title>${day.date}: ${number(day.contributionCount)} contributions</title></rect>`;
       if (day.date.endsWith('-01') && day.date.slice(0, 7) !== previousMonth && weekIndex < c.weeks.length - 3) {
         body += text(dx, 213, new Date(`${day.date}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' }), theme.muted, 10);
         previousMonth = day.date.slice(0, 7);
       }
     });
   });
-  body += text(24, 291, `Past 12 months · Updated ${dateLabel(data.updatedAt)}`, theme.muted, 11);
+  body += text(24, 291, `Past year · Updated ${dateLabel(data.updatedAt)} UTC`, theme.muted, 11);
   theme.heat.forEach((color, index) => { body += `<rect x="${368 + index * 9}" y="282" width="6" height="6" rx="1.4" fill="${color}"/>`; });
-  return frame('activity', 'GitHub activity', `${c.total} public contributions in the past twelve months. ${c.pullRequests} pull requests, ${c.commits} commits, ${c.reviews} reviews, ${c.issues} issues and ${c.repositories} repositories created visible to the workflow token. Calendar from GitHub. Updated ${data.updatedAt}.`, body, theme, x, y);
+  return frame('activity', 'GitHub activity', `${c.total} contributions on GitHub's public past-year profile calendar. Public API breakdown: ${c.pullRequests} pull requests, ${c.commits} commits, ${c.reviews} reviews, ${c.issues} issues and ${c.repositories} repositories created. The calendar and public subtotals have different visibility and need not sum to the same number. Updated ${data.updatedAt}.`, body, theme, x, y);
 }
 function languages(data, theme, x = 0, y = 0) {
   const shares = languageShares(data.languages.bytes);
@@ -245,7 +304,7 @@ export function renderFiles(data) {
     for (const mobile of [false, true]) {
       const width = mobile ? 440 : 900;
       const height = mobile ? 664 : 334;
-      files.set(`assets/overview-${mobile ? 'mobile-' : ''}${mode}.svg`, `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" fill="none" role="img" aria-labelledby="overview-title overview-desc"><title id="overview-title">GitHub activity and most used languages</title><desc id="overview-desc">Public GitHub contributions and owned public repository languages, including forks. Updated ${data.updatedAt}.</desc>${activity(data, theme, 0, 24)}${languages(data, theme, mobile ? 0 : 460, mobile ? 354 : 24)}</svg>`);
+      files.set(`assets/overview-${mobile ? 'mobile-' : ''}${mode}.svg`, `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" fill="none" role="img" aria-labelledby="overview-title overview-desc"><title id="overview-title">GitHub activity and most used languages</title><desc id="overview-desc">GitHub profile contributions and owned public repository languages, including forks. Updated ${data.updatedAt}.</desc>${activity(data, theme, 0, 24)}${languages(data, theme, mobile ? 0 : 460, mobile ? 354 : 24)}</svg>`);
     }
   }
   files.set('assets/profile-data.json', `${JSON.stringify(data, null, 2)}\n`);
@@ -253,7 +312,7 @@ export function renderFiles(data) {
 }
 
 export function updateReadme(readme, data) {
-  const alt = `${number(data.contributions.total)} public GitHub contributions in the past twelve months. Public repository language shares include forks. Updated ${dateLabel(data.updatedAt)}.`;
+  const alt = `${number(data.contributions.total)} contributions on GitHub's public past-year profile calendar. Public repository language shares include forks. Updated ${dateLabel(data.updatedAt)} UTC.`;
   const pattern = /(<img\b[^>]*src="\.\/assets\/overview-light\.svg"[^>]*\balt=")[^"]*(")/;
   if (!pattern.test(readme)) throw new Error('README overview image was not found; no files were updated');
   return readme.replace(pattern, (_, prefix, suffix) => `${prefix}${escape(alt)}${suffix}`);
