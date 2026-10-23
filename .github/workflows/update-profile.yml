@@ -1,0 +1,66 @@
+name: Update profile statistics
+
+on:
+  schedule:
+    # Every six hours, away from the busy start of the hour (UTC).
+    - cron: '23 1,7,13,19 * * *'
+  workflow_dispatch:
+  push:
+    paths:
+      - 'scripts/**'
+      - '.github/workflows/update-profile.yml'
+  pull_request:
+    paths:
+      - 'scripts/**'
+      - '.github/workflows/update-profile.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: profile-statistics-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: node --test scripts/update-profile.test.mjs
+
+  update:
+    if: github.event_name != 'pull_request'
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Fetch GitHub data and render all profile variants
+        run: node scripts/update-profile.mjs
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PROFILE_LOGIN: ${{ github.repository_owner }}
+      - name: Commit updated statistics
+        run: |
+          git add README.md assets/activity-*.svg assets/languages-*.svg assets/overview-*.svg assets/profile-data.json
+          if git diff --cached --quiet; then
+            echo "Statistics are already current."
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Refresh profile statistics'
+          git push origin "HEAD:$TARGET_BRANCH"
+        env:
+          TARGET_BRANCH: ${{ github.ref_name }}
