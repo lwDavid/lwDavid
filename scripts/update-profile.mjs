@@ -13,6 +13,7 @@ const COLLECTION = `
   contributionsCollection(from: $from, to: $to) {
     totalCommitContributions totalPullRequestContributions
     totalPullRequestReviewContributions totalIssueContributions totalRepositoryContributions
+    restrictedContributionsCount
     contributionCalendar {
       totalContributions
       weeks { contributionDays { date weekday contributionCount contributionLevel } }
@@ -125,6 +126,7 @@ export async function fetchProfileData({ login, token, now = new Date(), request
       reviews: collection?.totalPullRequestReviewContributions,
       issues: collection?.totalIssueContributions,
       repositories: collection?.totalRepositoryContributions,
+      restrictedContributions: collection?.restrictedContributionsCount,
       weeks: collection?.contributionCalendar?.weeks,
     },
     languages: { repositoryCount, includesForks: true, bytes: Object.fromEntries([...totals].sort(([a], [b]) => a.localeCompare(b))) },
@@ -191,7 +193,7 @@ function activity(data, theme, x = 0, y = 0) {
   const displayTotal = number(c.total);
   const totalSize = Math.min(65, 215 / Math.max(displayTotal.length * .58, 1));
   let body = text(24, 116, displayTotal, theme.text, totalSize, 'font-weight="600" letter-spacing="-2"');
-  body += text(416, 113, 'contributions', theme.secondary, 15, 'text-anchor="end"');
+  body += text(416, 113, 'public contributions', theme.secondary, 15, 'text-anchor="end"');
   for (const [index, [value, label]] of [[c.pullRequests, 'Pull requests'], [c.commits, 'Commits'], [c.reviews, 'Reviews']].entries()) {
     body += text(24 + index * 138, 164, number(value), theme.text, 24, 'font-weight="600"');
     body += text(24 + index * 138, 185, label, theme.muted, 12);
@@ -202,7 +204,7 @@ function activity(data, theme, x = 0, y = 0) {
     week.contributionDays.forEach(day => {
       const dx = 24 + weekIndex * step;
       const dy = 224 + day.weekday * 7.25;
-      body += `<rect x="${dx.toFixed(2)}" y="${dy.toFixed(2)}" width="5.6" height="5.6" rx="1.5" fill="${theme.heat[LEVELS.indexOf(day.contributionLevel)]}"><title>${day.date}: ${number(day.contributionCount)} contributions</title></rect>`;
+      body += `<rect x="${dx.toFixed(2)}" y="${dy.toFixed(2)}" width="5.6" height="5.6" rx="1.5" fill="${theme.heat[LEVELS.indexOf(day.contributionLevel)]}"><title>${day.date}: ${number(day.contributionCount)} public contributions</title></rect>`;
       if (day.date.endsWith('-01') && day.date.slice(0, 7) !== previousMonth && weekIndex < c.weeks.length - 3) {
         body += text(dx, 213, new Date(`${day.date}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' }), theme.muted, 10);
         previousMonth = day.date.slice(0, 7);
@@ -211,7 +213,7 @@ function activity(data, theme, x = 0, y = 0) {
   });
   body += text(24, 291, `Past 12 months · Updated ${dateLabel(data.updatedAt)}`, theme.muted, 11);
   theme.heat.forEach((color, index) => { body += `<rect x="${368 + index * 9}" y="282" width="6" height="6" rx="1.4" fill="${color}"/>`; });
-  return frame('activity', 'GitHub activity', `${c.total} contributions in the past twelve months. ${c.pullRequests} pull requests, ${c.commits} commits, ${c.reviews} reviews, ${c.issues} issues and ${c.repositories} repositories created visible to the workflow token. Calendar from GitHub. Updated ${data.updatedAt}.`, body, theme, x, y);
+  return frame('activity', 'GitHub activity', `${c.total} public contributions in the past twelve months. ${c.pullRequests} pull requests, ${c.commits} commits, ${c.reviews} reviews, ${c.issues} issues and ${c.repositories} repositories created visible to the workflow token. Calendar from GitHub. Updated ${data.updatedAt}.`, body, theme, x, y);
 }
 function languages(data, theme, x = 0, y = 0) {
   const shares = languageShares(data.languages.bytes);
@@ -243,7 +245,7 @@ export function renderFiles(data) {
     for (const mobile of [false, true]) {
       const width = mobile ? 440 : 900;
       const height = mobile ? 664 : 334;
-      files.set(`assets/overview-${mobile ? 'mobile-' : ''}${mode}.svg`, `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" fill="none" role="img" aria-labelledby="overview-title overview-desc"><title id="overview-title">GitHub activity and most used languages</title><desc id="overview-desc">GitHub contributions and owned public repository languages, including forks. Updated ${data.updatedAt}.</desc>${activity(data, theme, 0, 24)}${languages(data, theme, mobile ? 0 : 460, mobile ? 354 : 24)}</svg>`);
+      files.set(`assets/overview-${mobile ? 'mobile-' : ''}${mode}.svg`, `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" fill="none" role="img" aria-labelledby="overview-title overview-desc"><title id="overview-title">GitHub activity and most used languages</title><desc id="overview-desc">Public GitHub contributions and owned public repository languages, including forks. Updated ${data.updatedAt}.</desc>${activity(data, theme, 0, 24)}${languages(data, theme, mobile ? 0 : 460, mobile ? 354 : 24)}</svg>`);
     }
   }
   files.set('assets/profile-data.json', `${JSON.stringify(data, null, 2)}\n`);
@@ -251,7 +253,7 @@ export function renderFiles(data) {
 }
 
 export function updateReadme(readme, data) {
-  const alt = `${number(data.contributions.total)} GitHub contributions in the past twelve months. Public repository language shares include forks. Updated ${dateLabel(data.updatedAt)}.`;
+  const alt = `${number(data.contributions.total)} public GitHub contributions in the past twelve months. Public repository language shares include forks. Updated ${dateLabel(data.updatedAt)}.`;
   const pattern = /(<img\b[^>]*src="\.\/assets\/overview-light\.svg"[^>]*\balt=")[^"]*(")/;
   if (!pattern.test(readme)) throw new Error('README overview image was not found; no files were updated');
   return readme.replace(pattern, (_, prefix, suffix) => `${prefix}${escape(alt)}${suffix}`);

@@ -16,14 +16,17 @@ the previous successful images remain available and retain their update date.
 
 ## What the numbers mean
 
-- Activity covers the rolling past twelve months, ending at the refresh time.
+- Activity covers public contributions in the rolling past twelve months, ending
+  at the refresh time. It preserves the original card's public-only scope.
 - The heatmap and total come from `contributionsCollection.contributionCalendar`.
   They follow GitHub's contribution rules, not the recent-events feed. The total
   is validated against the sum of the daily counts.
 - Pull requests, commits, reviews, issues and created repositories use the
   contribution collection's corresponding totals. Visibility follows the workflow
-  token, so private contribution details are not included. A profile's anonymized
-  private contributions can make its calendar total differ from visible subtotals.
+  token, so private contribution details are not included. GitHub's profile page
+  can show anonymized private activity as well, so its overall number can be higher
+  than this card's public-only total. Public subtotals also need not sum to the
+  calendar total because GitHub counts additional contribution types.
 - Language shares use code bytes across **all owned public repositories,
   including forks**, preserving the original card's scope. Both repository and
   language connections are paginated. These percentages do not measure skill or

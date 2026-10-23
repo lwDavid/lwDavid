@@ -16,7 +16,7 @@ function fixture() {
   }
   return {
     login: 'lwDavid', updatedAt: now.toISOString(), period,
-    contributions: { total: weeks.flatMap(week => week.contributionDays).length, commits: 20, pullRequests: 30, reviews: 5, issues: 4, repositories: 2, weeks },
+    contributions: { total: weeks.flatMap(week => week.contributionDays).length, commits: 20, pullRequests: 30, reviews: 5, issues: 4, repositories: 2, restrictedContributions: 0, weeks },
     languages: { repositoryCount: 3, includesForks: true, bytes: { 'C++': 50, Python: 30, CMake: 5, Shell: 5, HTML: 4, JavaScript: 6 } },
   };
 }
@@ -24,7 +24,7 @@ const page = (nodes, hasNextPage = false, endCursor = null) => ({ nodes, pageInf
 const langs = (edges, hasNextPage = false, endCursor = null) => ({ edges: edges.map(([name, size]) => ({ size, node: { name } })), pageInfo: { hasNextPage, endCursor } });
 function collection(data = fixture()) {
   const c = data.contributions;
-  return { totalCommitContributions: c.commits, totalPullRequestContributions: c.pullRequests, totalPullRequestReviewContributions: c.reviews, totalIssueContributions: c.issues, totalRepositoryContributions: c.repositories, contributionCalendar: { totalContributions: c.total, weeks: c.weeks } };
+  return { totalCommitContributions: c.commits, totalPullRequestContributions: c.pullRequests, totalPullRequestReviewContributions: c.reviews, totalIssueContributions: c.issues, totalRepositoryContributions: c.repositories, restrictedContributionsCount: c.restrictedContributions, contributionCalendar: { totalContributions: c.total, weeks: c.weeks } };
 }
 const readme = '<picture><img src="./assets/overview-light.svg" width="900" alt="Old numbers"></picture>\n';
 
@@ -122,7 +122,7 @@ test('language names are escaped before being inserted into SVG markup', () => {
 test('README alternative text updates while the visitor counter is preserved', () => {
   const source = '<img src="https://count.getloli.com/@lwDavid" alt="Profile views">\n' + readme;
   const updated = updateReadme(source, fixture());
-  assert.match(updated, /366 GitHub contributions/);
+  assert.match(updated, /366 public GitHub contributions/);
   assert.match(updated, /Updated 24 Oct 2026/);
   assert.equal(updated.split('\n')[0], source.split('\n')[0]);
   assert.throws(() => updateReadme('README without a card', fixture()), /was not found/);
