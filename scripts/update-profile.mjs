@@ -135,6 +135,10 @@ export async function fetchProfileData({ login, token, now = new Date(), request
 
 export function validateData(data) {
   if (!data?.login || !Number.isFinite(Date.parse(data.updatedAt))) throw new Error('Invalid profile metadata');
+  if (!Number.isFinite(Date.parse(data.period?.from)) || !Number.isFinite(Date.parse(data.period?.to))) throw new Error('Invalid contribution period');
+  let expectedDate = Date.parse(`${data.period.from.slice(0, 10)}T00:00:00Z`);
+  const lastDate = Date.parse(`${data.period.to.slice(0, 10)}T00:00:00Z`);
+  if (lastDate < expectedDate || lastDate - expectedDate > 366 * 86_400_000) throw new Error('Invalid contribution period');
   const c = data.contributions;
   for (const key of ['total', 'pullRequests', 'commits', 'reviews', 'issues', 'repositories']) {
     if (!Number.isSafeInteger(c?.[key]) || c[key] < 0) throw new Error(`Invalid contribution count: ${key}`);
@@ -146,13 +150,16 @@ export function validateData(data) {
     if (!Array.isArray(week.contributionDays) || !week.contributionDays.length || week.contributionDays.length > 7) throw new Error('Incomplete calendar week');
     for (const day of week.contributionDays) {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(day.date) || day.date <= previousDate || !Number.isFinite(Date.parse(day.date))) throw new Error('Invalid calendar date order');
+      if (Date.parse(`${day.date}T00:00:00Z`) !== expectedDate) throw new Error('Calendar contains missing or out-of-period dates');
       if (!Number.isInteger(day.weekday) || day.weekday < 0 || day.weekday > 6 || new Date(`${day.date}T00:00:00Z`).getUTCDay() !== day.weekday) throw new Error('Invalid calendar weekday');
       if (!Number.isSafeInteger(day.contributionCount) || day.contributionCount < 0 || !LEVELS.includes(day.contributionLevel)) throw new Error('Invalid calendar contribution');
       sum += day.contributionCount;
       previousDate = day.date;
+      expectedDate += 86_400_000;
     }
   }
   if (sum !== c.total) throw new Error('Calendar total does not match daily contributions');
+  if (expectedDate !== lastDate + 86_400_000) throw new Error('Calendar does not cover the entire contribution period');
   if (!data.languages || !Number.isSafeInteger(data.languages.repositoryCount) || data.languages.repositoryCount < 0 || data.languages.includesForks !== true || !data.languages.bytes) throw new Error('Missing language data');
   for (const bytes of Object.values(data.languages.bytes)) if (!Number.isSafeInteger(bytes) || bytes < 0) throw new Error('Invalid language total');
 }

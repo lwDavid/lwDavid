@@ -66,7 +66,14 @@ test('calendar counts and ordering must match the GitHub total', () => {
   assert.throws(() => validateData(mismatch), /Calendar total/);
   const disorder = fixture();
   disorder.contributions.weeks.reverse();
-  assert.throws(() => validateData(disorder), /date order/);
+  assert.throws(() => validateData(disorder), /date order|out-of-period dates/);
+});
+
+test('a truncated calendar is rejected even if its daily sum matches the total', () => {
+  const data = fixture();
+  data.contributions.weeks.at(-1).contributionDays.pop();
+  data.contributions.total--;
+  assert.throws(() => validateData(data), /entire contribution period/);
 });
 
 test('zero-valued profiles and repositories without languages render honestly', () => {
