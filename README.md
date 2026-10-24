@@ -5,11 +5,6 @@
 </p>
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="./assets/hero-dark.svg">
-  <img src="./assets/hero-light.svg" width="900" alt="David — Software Engineer @ Shanghai.">
-</picture>
-
-<picture>
   <source media="(max-width: 600px) and (prefers-color-scheme: dark)" srcset="./assets/overview-mobile-dark.svg">
   <source media="(max-width: 600px)" srcset="./assets/overview-mobile-light.svg">
   <source media="(prefers-color-scheme: dark)" srcset="./assets/overview-dark.svg">
