@@ -1,23 +1,23 @@
 {
   "login": "lwDavid",
-  "updatedAt": "2026-10-27T22:59:31.015Z",
+  "updatedAt": "2026-10-28T06:53:52.838Z",
   "period": {
-    "from": "2025-10-27T22:59:31.015Z",
-    "to": "2026-10-27T22:59:31.015Z"
+    "from": "2025-10-28T06:53:52.838Z",
+    "to": "2026-10-28T06:53:52.838Z"
   },
   "calendarPeriod": {
     "from": "2025-10-26T00:00:00.000Z",
-    "to": "2026-10-27T00:00:00.000Z"
+    "to": "2026-10-28T00:00:00.000Z"
   },
   "calendarSource": "https://github.com/users/lwDavid/contributions",
   "contributions": {
-    "total": 748,
-    "apiTotal": 609,
-    "pullRequests": 235,
-    "commits": 193,
+    "total": 760,
+    "apiTotal": 618,
+    "pullRequests": 240,
+    "commits": 195,
     "reviews": 43,
-    "issues": 104,
-    "repositories": 8,
+    "issues": 105,
+    "repositories": 9,
     "restrictedContributions": 26,
     "weeks": [
       {
@@ -2431,26 +2431,33 @@
             "weekday": 2,
             "contributionCount": 7,
             "contributionLevel": "SECOND_QUARTILE"
+          },
+          {
+            "date": "2026-10-28",
+            "weekday": 3,
+            "contributionCount": 12,
+            "contributionLevel": "THIRD_QUARTILE"
           }
         ]
       }
     ]
   },
   "languages": {
-    "repositoryCount": 10,
+    "repositoryCount": 11,
     "includesForks": true,
     "bytes": {
       "Awk": 7626,
-      "C": 207596,
-      "C++": 21722289,
-      "CMake": 679153,
+      "C": 241012,
+      "C++": 33619545,
+      "CMake": 1035741,
       "CSS": 7232,
-      "Dockerfile": 928,
+      "Dockerfile": 6868,
       "HTML": 527647,
       "JavaScript": 95687,
       "Makefile": 1578,
-      "Python": 17220830,
-      "Shell": 553401,
+      "MLIR": 2130,
+      "Python": 31228886,
+      "Shell": 1148491,
       "TeX": 15855,
       "TypeScript": 26863
     }
